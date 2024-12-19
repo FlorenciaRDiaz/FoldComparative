@@ -291,20 +291,22 @@ def get_residues_below_threshold(pdb_file, threshold):
     
     return residues_to_color
 
-
-
 #_________________________ Superimposicion con argumento para threshold_____________**********
 from Bio.PDB import PDBParser, Superimposer, PDBIO, Select
 
-    
-def superimposed_pdb(pdb_file_exp, pdb_file_pred, guardo_pdb__pred_superimposed, threshold):
+import os
+from Bio.PDB import PDBParser, PDBIO, Superimposer
+from Bio.PDB import PDBParser, Superimposer, PDBIO
+import os
+
+
+def superimposed_HC_ind(pdb_file_exp, pdb_file_pred, guardo_pdb__pred_superimposed, threshold):
     """
-    Alinea dos estructuras PDB basadas en átomos CA con pLDDT mayor a 'threshold' y guarda las estructuras alineadas y no alineadas.
+    Alinea dos estructuras PDB basadas en átomos CA con pLDDT mayor a 'threshold' y guarda las estructuras alineadas.
 
     :param pdb_file_exp: Ruta al archivo PDB de la estructura experimental.
     :param pdb_file_pred: Ruta al archivo PDB de la estructura predicha.
-    :param output_superimposed_full: Ruta al archivo PDB donde guardo la estructura alineada completa.
-    :param output_file_no_aligned: Ruta al archivo PDB donde guardo la estructura con solo los átomos no alineados.
+    :param guardo_pdb__pred_superimposed: Ruta al archivo PDB donde guardar la estructura alineada.
     :param threshold: Umbral de pLDDT para seleccionar residuos =0 (todos los residuos que coinciden).
     :return: Objeto Superimposer con la alineación realizada.
     """
@@ -316,58 +318,63 @@ def superimposed_pdb(pdb_file_exp, pdb_file_pred, guardo_pdb__pred_superimposed,
     # Obtener los residuos y átomos de CA correspondientes para la alineación
     exp_atoms = []
     pred_atoms = []
-    aligned_residue_ids = []  # Lista para almacenar IDs de residuos alineados
-    aligned_atoms_pred = []
 
-    # Iterar sobre los residuos de la estructura predicha
     for pred_chain in structure_pred.get_chains():
         for pred_res in pred_chain.get_residues():
-            if pred_res.has_id('CA') and pred_res['CA'].get_bfactor() >= threshold:  # Filtrar por pLDDT (B-factor)
+            if pred_res.has_id('CA') and pred_res['CA'].get_bfactor() >= threshold:  # Filtrar por pLDDT
                 pred_res_id = pred_res.get_id()[1]  # ID del residuo predicho
-
-                # Buscar el residuo correspondiente en la estructura experimental
                 for exp_chain in structure_exp.get_chains():
                     for exp_res in exp_chain.get_residues():
-                        exp_res_id = exp_res.get_id()[1]  # ID del residuo experimental
-
-                        # Comparar si los residuos coinciden en ID
-                        if exp_res_id == pred_res_id and exp_res.has_id('CA'):
-                            exp_atoms.append(exp_res['CA'])  # Agregar CA experimental
-                            pred_atoms.append(pred_res['CA'])  # Agregar CA predicho
-                            aligned_atoms_pred.append(pred_res['CA'])  # Para mantenerlos en visualización completa
-                            aligned_residue_ids.append((exp_res_id, pred_res_id))  # Guardar IDs alineados
+                        if exp_res.has_id('CA') and exp_res.get_id()[1] == pred_res_id:
+                            exp_atoms.append(exp_res['CA'])
+                            pred_atoms.append(pred_res['CA'])
                             break
 
-    # Verificar si se encontraron átomos CA para alinear
     if not exp_atoms or not pred_atoms:
         raise ValueError("No se encontraron átomos CA alineados para realizar el alineamiento.")
 
     # Alinear las estructuras usando los átomos CA coincidentes
     super_imposer = Superimposer()
     super_imposer.set_atoms(exp_atoms, pred_atoms)
-    super_imposer.apply(structure_pred.get_atoms())  # Aplica la alineación a la estructura predicha
+    super_imposer.apply(structure_pred.get_atoms())  # Aplicar alineación
 
     # Guardar la estructura alineada completa
     io = PDBIO()
     io.set_structure(structure_pred)
     io.save(guardo_pdb__pred_superimposed)
 
-
-    # Imprimo  los IDs de los residuos alineados
-    pred_residue_ids = [pred_id for _, pred_id in aligned_residue_ids]
-    print(f"Lista de IDs de residuos predichos alineados (pLDDT ≥ {threshold}):")
-    print(pred_residue_ids)
-    longitud=len(pred_residue_ids)
-    print(f"Longitud de la lista de IDs de residuos predichos alineados: {longitud}")
-     # Longitud en términos de número de residuos para estructuras
-    longitud_exp = len(list(structure_exp.get_residues()))
-    longitud_pred = len(list(structure_pred.get_residues()))
-
-    print(f'Longitud de la estructura experimental: {longitud_exp}')
-    print(f'Longitud de la estructura predicha: {longitud_pred}')
-
-
     return super_imposer
+
+
+def superimposed_HC(ref_dir, x_dir, output_superimposed_dir, threshold):
+    """
+    Procesa archivos PDB en los directorios REF Y X, alineándolos en pares.
+
+    :param ref_dir: Directorio con archivos PDB de referencia.
+    :param x_dir: Directorio con archivos PDB del método X.
+    :param output_superimposed_dir: Directorio para guardar estructuras alineadas.
+    :param threshold: Umbral de pLDDT para seleccionar residuos.
+    """
+    ref_files = sorted([f for f in os.listdir(ref_dir) if f.endswith('.pdb')])
+    x_files = sorted([f for f in os.listdir(x_dir) if f.endswith('.pdb')])
+
+    if len(ref_files) != len(x_files):
+        raise ValueError("Los directorios REF y X deben contener el mismo número de archivos (y en orden alfabético).")
+
+    os.makedirs(output_superimposed_dir, exist_ok=True)
+
+    for ref_file, x_file in zip(ref_files, x_files):
+        ref_file_path = os.path.join(ref_dir, ref_file)
+        x_file_path = os.path.join(x_dir, x_file)
+
+        base_name = os.path.splitext(ref_file)[0]
+        output_superimposed_file = os.path.join(output_superimposed_dir, f"{base_name}_superimposed.pdb")
+
+        try:
+            superimposed_HC_ind(ref_file_path, x_file_path, output_superimposed_file, threshold)
+        except Exception as e:
+            print(f"Error al procesar {ref_file} y {x_file}: {e}")
+
 #____________________________Funcion calculo de distancias por CA__________________
 from Bio.PDB import PDBParser
 import numpy as np
@@ -1033,78 +1040,49 @@ def filter_metadata(df):
 
     # Retornar el DataFrame resultante
     return df_sorted
-####------------------Funciones para Metricas comparativas de distancias --------------
-# ##-----------------------------------obtener PDBS--------------------------------------
-# # Asegúrate de que fx.extract_zips está definido y funciona como se espera
-# def extract_all_files(results):
-#     # Itera sobre los números de 1 a 199 para generar las claves p1, p2, ..., p199
-#     for i in range(1, 200):
-#         key = f'p{i}'
-        
-#         # Verifica si la clave existe en el diccionario
-#         if key in results:
-#             result_obj = results[key]
-            
-#             try:
-#                 # Obtén el directorio del objeto de resultados
-#                 directory = result_obj.directory.partition("/")[0]  # Asegúrate de que esta sea la forma correcta de obtener el directorio
-                
-#                 if not os.path.isdir(directory):
-#                     print(f"El directorio no existe: {directory}")
-#                     continue
 
-#                 # Llama a la función para extraer los archivos .pdb
-#                 afx.extract_zips(directory)
-#                 print(f"Archivos extraídos para {key} en {directory}")
-
-#             except Exception as e:
-#                 print(f"Error al extraer archivos para {key} en {directory}: {e}")
-#         else:
-#             print(f"Clave {key} no encontrada en results")
 #----------------------------------------------------------------------------------------------------------
-def superimposed_HC(aff_dir, cf_dir, output_superimposed_dir, output_no_aligned_dir, threshold):
-    """
-    Procesa archivos PDB en los directorios AFF y CF, alineándolos en pares.
+# d#f superimposed_HC(ref_dir, x_dir, output_superimposed_dir, threshold):
+#     """
+#     Procesa archivos PDB en los directorios REF Y X, alineándolos en pares.
     
-    :param aff_dir: Directorio con archivos PDB AFF.
-    :param cf_dir: Directorio con archivos PDB CF.
-    :param output_superimposed_dir: Directorio para guardar estructuras alineadas.
-    :param output_no_aligned_dir: Directorio para guardar estructuras con átomos no alineados.
-    :param threshold: Umbral de pLDDT para seleccionar residuos.
-    """
-    # Obtener los archivos en ambos directorios
-    aff_files = sorted([f for f in os.listdir(aff_dir) if f.endswith('.pdb')])
-    cf_files = sorted([f for f in os.listdir(cf_dir) if f.endswith('.pdb')])
+#     :param ref_dir: Directorio con archivos PDB de referencia.
+#     :param x_dir: Directorio con archivos PDB del metodo x.
+#     :param output_superimposed_dir: Directorio para guardar estructuras alineadas.
+#     :param threshold: Umbral de pLDDT para seleccionar residuos.
+#     """
+#     # Obtener los archivos en ambos directorios
+#     ref_files = sorted([f for f in os.listdir(ref_dir) if f.endswith('.pdb')])
+#     x_files = sorted([f for f in os.listdir(x_dir) if f.endswith('.pdb')])
     
-    if len(aff_files) != len(cf_files):
-        raise ValueError("Los directorios AFF y CF deben contener el mismo número de archivos.")
+#     if len(ref_files) != len(x_files):
+#         raise ValueError("Los directorios REF y X deben contener el mismo número de archivos (y en orden alfabético).")
 
-    # Crear directorios de salida si no existen
-    os.makedirs(output_superimposed_dir, exist_ok=True)
-    os.makedirs(output_no_aligned_dir, exist_ok=True)
+#     # Crear directorios de salida si no existen
+#     os.makedirs(output_superimposed_dir, exist_ok=True)
+    
 
-    # Procesar los pares de archivos
-    for aff_file, cf_file in zip(aff_files, cf_files):
-        aff_file_path = os.path.join(aff_dir, aff_file)
-        cf_file_path = os.path.join(cf_dir, cf_file)
+#     # Procesar los pares de archivos
+#     for ref_file, x_file in zip(ref_files, x_files):
+#         ref_file_path = os.path.join(ref_dir, ref_file)
+#         x_file_path = os.path.join(x_dir, x_file)
         
-        # Definir los nombres para los archivos de salida
-        base_name = os.path.splitext(aff_file)[0]
-        output_superimposed_file = os.path.join(output_superimposed_dir, f"{base_name}_superimposed.pdb")
-        output_no_aligned_file = os.path.join(output_no_aligned_dir, f"{base_name}_no_aligned.pdb")
+#         # Definir los nombres para los archivos de salida
+#         base_name = os.path.splitext(ref_file)[0]
+#         output_superimposed_file = os.path.join(output_superimposed_dir, f"{base_name}_superimposed.pdb")
         
-        # Llamar a la función de superposición
-        try:
-            superimposed_pdb(
-                aff_file_path,
-                cf_file_path,
-                output_superimposed_file,
-                output_no_aligned_file,
-                threshold
-            )
         
-        except Exception as e:
-            print(f"Error al procesar el archivo {aff_file} y {cf_file}: {e}")
+#         # Llamar a la función de superposición
+#         try:
+#             superimposed_HC_ind(
+#                 ref_file_path,
+#                 x_file_path,
+#                 output_superimposed_file,
+#                 threshold
+#             )
+        
+#         except Exception as e:
+#             print(f"Error al procesar el archivo {ref_file} y {x_file}: {e}")
 
 
 
